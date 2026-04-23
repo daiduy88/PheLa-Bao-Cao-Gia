@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PHELA Pricing Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useMemo, useState } = React;
+
+    const SAMPLE_MONTH = "04/2026";
+    const REPORT_VIEWS = ["Tất cả", "Food", "NonFood"];
+
+    const SAMPLE_ROWS = [
+      { reportMonth: SAMPLE_MONTH, block: "Food", region: "Miền Bắc", group: "Dry Foods", sku: "FD001", name: "Bột cacao", purchaseQty: 182, uom: "kg", spend: 14980000000, currentPrice: 82000, prevPrice: 97500, yoyPrice: 86000, supplierCode: "NCC001", supplierName: "NCC Cacao Việt", priceChangeReason: "Giảm do đàm phán lại giá", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "Food", region: "Miền Bắc", group: "Milk & Dairy", sku: "FD002", name: "Sữa tươi", purchaseQty: 651000, uom: "ml", spend: 21170000000, currentPrice: 32500, prevPrice: 32500, yoyPrice: 34000, supplierCode: "NCC002", supplierName: "NCC Sữa Bắc", priceChangeReason: "Không đổi", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "Food", region: "Miền Nam", group: "Vegetables & Fruits", sku: "FD003", name: "Dâu tây", purchaseQty: 3174, uom: "kg", spend: 279300000, currentPrice: 88000, prevPrice: 82000, yoyPrice: 74000, supplierCode: "NCC003", supplierName: "Trang trại Nam Phú", priceChangeReason: "Tăng do đầu mùa", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "Food", region: "Miền Bắc", group: "Vegetables & Fruits", sku: "FD004", name: "Chanh xanh trái", purchaseQty: 568, uom: "kg", spend: 28386600, currentPrice: 50000, prevPrice: 30000, yoyPrice: 28000, supplierCode: "NCC004", supplierName: "NCC Trái cây Bắc", priceChangeReason: "Tăng do thiếu nguồn cung", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "Food", region: "Miền Trung", group: "Vegetables & Fruits", sku: "FD005", name: "Táo đỏ", purchaseQty: 100000, uom: "kg", spend: 4600000000, currentPrice: 46000, prevPrice: 46034, yoyPrice: 45500, supplierCode: "NCC005", supplierName: "NCC Miền Trung", priceChangeReason: "Ổn định", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "NonFood", region: "Miền Nam", group: "Packaging", sku: "NF001", name: "Ly giấy 500ml", purchaseQty: 8150000, uom: "cái", spend: 9780000000, currentPrice: 1200, prevPrice: 1200, yoyPrice: 1180, supplierCode: "NCC101", supplierName: "Bao bì Phê La", priceChangeReason: "Không đổi", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "NonFood", region: "Miền Nam", group: "VPP", sku: "NF002", name: "Giấy note", purchaseQty: 1280, uom: "xấp", spend: 10900000, currentPrice: 8500, prevPrice: 6500, yoyPrice: 7200, supplierCode: "NCC102", supplierName: "VPP Minh Anh", priceChangeReason: "Tăng do đổi NCC", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "NonFood", region: "Miền Nam", group: "Máy móc", sku: "NF003", name: "Máy xay cà phê", purchaseQty: 28, uom: "cái", spend: 504000000, currentPrice: 17000000, prevPrice: 17500000, yoyPrice: 17100000, supplierCode: "NCC103", supplierName: "Thiết bị Barista", priceChangeReason: "Giảm do chương trình hỗ trợ", note: "" },
+      { reportMonth: SAMPLE_MONTH, block: "NonFood", region: "Miền Bắc", group: "Packaging", sku: "NF004", name: "Nắp ly", purchaseQty: 5030000, uom: "cái", spend: 4680000000, currentPrice: 930, prevPrice: 937, yoyPrice: 928, supplierCode: "NCC104", supplierName: "NCC Nắp Ly", priceChangeReason: "Giảm do tối ưu đơn hàng", note: "" }
+    ];
+
+    const HEADER_ALIASES = {
+      reportMonth: ["report_month", "month", "report month", "tháng báo cáo", "thang bao cao"],
+      sku: ["sku", "mã hàng", "mã vt", "mã vật tư", "ma hang", "ma vt"],
+      name: ["item_name", "tên hàng", "tên vật tư", "tên vt", "vật tư", "ten hang", "ten vat tu", "ten vt", "vat tu", "item", "material", "description"],
+      region: ["region", "miền", "khu vực", "mien", "khu vuc"],
+      group: ["group_name", "nhóm hàng", "ngành hàng", "group", "category", "nhom hang", "nganh hang"],
+      purchaseQty: ["purchase_qty", "số lượng mua", "so luong mua", "qty", "quantity", "sl mua"],
+      uom: ["uom", "đơn vị tính", "don vi tinh", "unit"],
+      spend: ["spend", "giá trị mua", "giá trị", "thành tiền", "value", "amount", "gia tri mua", "thanh tien"],
+      currentPrice: ["current_price", "giá tháng báo cáo", "giá hiện tại", "giá mua", "current price", "unit price", "price"],
+      prevPrice: ["prev_price", "giá tháng trước", "giá t-1", "previous price", "prev price"],
+      yoyPrice: ["yoy_price", "giá cùng kỳ", "yoy price", "last year price"],
+      supplierCode: ["supplier_code", "mã ncc", "ma ncc", "vendor code"],
+      supplierName: ["supplier_name", "tên ncc", "ten ncc", "vendor name", "supplier"],
+      priceChangeReason: ["price_change_reason", "change_reason", "lý do tăng hoặc giảm giá", "lý do tăng giảm giá", "reason"],
+      note: ["note", "notes", "ghi chú", "ghi chu", "remark", "remarks"],
+    };
+
+    function normalizeHeader(v) {
+      return String(v ?? "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+    }
+    function normalizeMonthLabel(v) {
+      const raw = String(v || "").trim();
+      if (!raw) return "";
+      if (/^\d{4}-\d{2}$/.test(raw)) { const [y, m] = raw.split("-"); return `${m}/${y}`; }
+      if (/^\d{4}\/\d{2}$/.test(raw)) { const [y, m] = raw.split("/"); return `${m}/${y}`; }
+      return raw;
+    }
+    function shiftMonthLabel(label, monthOffset = 0, yearOffset = 0) {
+      const normalized = normalizeMonthLabel(label);
+      const parts = normalized.split("/");
+      if (parts.length !== 2) return "";
+      const m = Number(parts[0]);
+      const y = Number(parts[1]);
+      if (!m || !y) return "";
+      const date = new Date(y + yearOffset, m - 1 + monthOffset, 1);
+      return `${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+    }
+    function formatCurrencyCompact(value) {
+      const n = Number(value || 0), abs = Math.abs(n);
+      if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)} tỷ`;
+      if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(2)} triệu`;
+      if (abs >= 1_000) return `${(n / 1_000).toFixed(1)} nghìn`;
+      return `${n.toFixed(0)}`;
+    }
+    function formatNumber(value) { return new Intl.NumberFormat("vi-VN").format(Number(value || 0)); }
+    function formatPct(value) { const n = Number(value || 0); return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`; }
+    function toNumber(value) {
+      if (value == null || value === "") return 0;
+      if (typeof value === "number") return value;
+      const cleaned = String(value).replace(/,/g, "").replace(/\s+/g, "").replace(/[^0-9.-]/g, "");
+      const parsed = Number(cleaned);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    function findColumnIndex(headers, aliases) {
+      const normalized = headers.map(normalizeHeader);
+      for (const alias of aliases) {
+        const idx = normalized.indexOf(normalizeHeader(alias));
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    }
+    function detectBlockFromSheetName(name) {
+      const n = normalizeHeader(name);
+      if (n.includes("nonfood") || n.includes("non food")) return "NonFood";
+      if (n.includes("food")) return "Food";
+      return null;
+    }
+    function parseWorkbook(file, callback) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        callback(workbook);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+    function buildRowsFromWorkbook(workbook) {
+      const rows = [];
+      for (const sheetName of workbook.SheetNames) {
+        const block = detectBlockFromSheetName(sheetName);
+        if (!block) continue;
+        const sheet = workbook.Sheets[sheetName];
+        const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        if (!matrix.length) continue;
+        const headers = matrix[0];
+        const mapping = {
+          reportMonth: findColumnIndex(headers, HEADER_ALIASES.reportMonth),
+          sku: findColumnIndex(headers, HEADER_ALIASES.sku),
+          name: findColumnIndex(headers, HEADER_ALIASES.name),
+          region: findColumnIndex(headers, HEADER_ALIASES.region),
+          group: findColumnIndex(headers, HEADER_ALIASES.group),
+          purchaseQty: findColumnIndex(headers, HEADER_ALIASES.purchaseQty),
+          uom: findColumnIndex(headers, HEADER_ALIASES.uom),
+          spend: findColumnIndex(headers, HEADER_ALIASES.spend),
+          currentPrice: findColumnIndex(headers, HEADER_ALIASES.currentPrice),
+          prevPrice: findColumnIndex(headers, HEADER_ALIASES.prevPrice),
+          yoyPrice: findColumnIndex(headers, HEADER_ALIASES.yoyPrice),
+          supplierCode: findColumnIndex(headers, HEADER_ALIASES.supplierCode),
+          supplierName: findColumnIndex(headers, HEADER_ALIASES.supplierName),
+          priceChangeReason: findColumnIndex(headers, HEADER_ALIASES.priceChangeReason),
+          note: findColumnIndex(headers, HEADER_ALIASES.note),
+        };
+        matrix.slice(1).forEach((row) => {
+          const item = {
+            reportMonth: mapping.reportMonth >= 0 ? normalizeMonthLabel(row[mapping.reportMonth]) : "",
+            block,
+            region: mapping.region >= 0 ? String(row[mapping.region] || "Không xác định") : "Không xác định",
+            group: mapping.group >= 0 ? String(row[mapping.group] || "Khác") : "Khác",
+            sku: mapping.sku >= 0 ? String(row[mapping.sku] || "") : "",
+            name: mapping.name >= 0 ? String(row[mapping.name] || "") : "",
+            purchaseQty: mapping.purchaseQty >= 0 ? toNumber(row[mapping.purchaseQty]) : 0,
+            uom: mapping.uom >= 0 ? String(row[mapping.uom] || "") : "",
+            spend: mapping.spend >= 0 ? toNumber(row[mapping.spend]) : 0,
+            currentPrice: mapping.currentPrice >= 0 ? toNumber(row[mapping.currentPrice]) : 0,
+            prevPrice: mapping.prevPrice >= 0 ? toNumber(row[mapping.prevPrice]) : 0,
+            yoyPrice: mapping.yoyPrice >= 0 ? toNumber(row[mapping.yoyPrice]) : 0,
+            supplierCode: mapping.supplierCode >= 0 ? String(row[mapping.supplierCode] || "") : "",
+            supplierName: mapping.supplierName >= 0 ? String(row[mapping.supplierName] || "") : "",
+            priceChangeReason: mapping.priceChangeReason >= 0 ? String(row[mapping.priceChangeReason] || "") : "",
+            note: mapping.note >= 0 ? String(row[mapping.note] || "") : "",
+          };
+          if (item.sku || item.name) rows.push(item);
+        });
+      }
+      return rows;
+    }
+    function aggregateRows(rows, mode) {
+      const map = new Map();
+      rows.forEach((row) => {
+        const prevPrice = row.prevPrice || 0;
+        const currentPrice = row.currentPrice || 0;
+        const hasSpend = (row.spend || 0) > 0;
+        const comparable = Boolean(prevPrice && currentPrice && hasSpend);
+        const pct = comparable ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+        const impact = comparable ? ((currentPrice - prevPrice) * (row.spend || 0)) / (currentPrice || 1) : 0;
+        const key = row[mode];
+        if (!map.has(key)) map.set(key, { label: key, spend: 0, impact: 0, pctAccumulator: 0, pctWeight: 0, upCount: 0, downCount: 0 });
+        const item = map.get(key);
+        item.spend += row.spend || 0;
+        item.impact += impact;
+        if (comparable) {
+          item.pctAccumulator += pct * (row.spend || 0);
+          item.pctWeight += row.spend || 0;
+          if (pct > 0) item.upCount += 1;
+          if (pct < 0) item.downCount += 1;
+        }
+      });
+      return Array.from(map.values()).map((item) => ({ ...item, pct: item.pctWeight ? item.pctAccumulator / item.pctWeight : 0 })).sort((a, b) => b.pct - a.pct);
+    }
+    function buildDashboardData(rows) {
+      const blocks = { "Tất cả": rows, Food: rows.filter((r) => r.block === "Food"), NonFood: rows.filter((r) => r.block === "NonFood") };
+      const out = {};
+      Object.entries(blocks).forEach(([view, blockRows]) => {
+        const spend = blockRows.reduce((sum, r) => sum + (r.spend || 0), 0);
+        const impactPrev = blockRows.reduce((sum, r) => (!r.prevPrice || !r.currentPrice ? sum : sum + ((r.currentPrice - r.prevPrice) * (r.spend || 0)) / (r.currentPrice || 1)), 0);
+        const impactYoy = blockRows.reduce((sum, r) => (!r.yoyPrice || !r.currentPrice ? sum : sum + ((r.currentPrice - r.yoyPrice) * (r.spend || 0)) / (r.currentPrice || 1)), 0);
+        const changes = blockRows.filter((r) => r.prevPrice && r.currentPrice && (r.spend || 0) > 0).map((r) => ({ ...r, diff: r.currentPrice - r.prevPrice, pct: ((r.currentPrice - r.prevPrice) / r.prevPrice) * 100, impact: ((r.currentPrice - r.prevPrice) * (r.spend || 0)) / (r.currentPrice || 1) }));
+        const increaseItems = changes.filter((r) => r.pct > 0).sort((a, b) => b.pct - a.pct);
+        const decreaseItems = changes.filter((r) => r.pct < 0).sort((a, b) => b.pct - a.pct);
+        const foodSpend = blocks.Food.reduce((sum, r) => sum + (r.spend || 0), 0);
+        const nonFoodSpend = blocks.NonFood.reduce((sum, r) => sum + (r.spend || 0), 0);
+        out[view] = {
+          kpis: [
+            { label: view === "Tất cả" ? "Tổng giá trị mua" : `Tổng giá trị mua ${view}`, value: formatCurrencyCompact(spend), note: view === "Tất cả" ? `Food: ${formatCurrencyCompact(foodSpend)} | NonFood: ${formatCurrencyCompact(nonFoodSpend)}` : `${formatNumber(blockRows.length)} dòng dữ liệu`, tone: "neutral" },
+            { label: "Ảnh hưởng giá vs tháng trước", value: impactPrev < 0 ? `${formatCurrencyCompact(impactPrev)} (giảm chi phí)` : impactPrev > 0 ? `${formatCurrencyCompact(impactPrev)} (tăng chi phí)` : formatCurrencyCompact(impactPrev), note: `Tương đương ${formatPct(spend ? (impactPrev / spend) * 100 : 0)}`, tone: impactPrev > 0 ? "increase" : impactPrev < 0 ? "decrease" : "neutral" },
+            { label: "Ảnh hưởng giá vs cùng kỳ", value: impactYoy < 0 ? `${formatCurrencyCompact(impactYoy)} (giảm chi phí)` : impactYoy > 0 ? `${formatCurrencyCompact(impactYoy)} (tăng chi phí)` : formatCurrencyCompact(impactYoy), note: `Tương đương ${formatPct(spend ? (impactYoy / spend) * 100 : 0)}`, tone: impactYoy > 0 ? "increase" : impactYoy < 0 ? "decrease" : "neutral" },
+            { label: "SKU biến động vs tháng trước", value: formatNumber(increaseItems.length + decreaseItems.length), note: `Tăng giá ${increaseItems.length} | Giảm giá ${decreaseItems.length}`, tone: "neutral" },
+          ],
+          regionSummary: aggregateRows(blockRows, "region"),
+          groupSummary: aggregateRows(blockRows, "group"),
+          increaseItems,
+          decreaseItems,
+        };
+      });
+      return out;
+    }
+
+    function StatCard({ item }) {
+      const toneClass = item.tone === "increase" ? "border-rose-200 bg-rose-50" : item.tone === "decrease" ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white";
+      const valueClass = item.tone === "increase" ? "text-rose-700" : item.tone === "decrease" ? "text-emerald-700" : "text-slate-900";
+      const noteClass = item.tone === "increase" ? "text-rose-700" : item.tone === "decrease" ? "text-emerald-700" : "text-slate-600";
+      return <div className={`rounded-3xl border p-5 shadow-sm ${toneClass}`}><div className="text-sm text-slate-500">{item.label}</div><div className={`mt-3 text-3xl font-semibold ${valueClass}`}>{item.value}</div><div className={`mt-2 text-sm ${noteClass}`}>{item.note}</div></div>;
+    }
+
+    function SummaryTable({ title, rows, kind, onCountClick }) {
+      const totals = rows.reduce((acc, row) => ({ spend: acc.spend + (row.spend || 0), impact: acc.impact + (row.impact || 0), upCount: acc.upCount + (row.upCount || 0), downCount: acc.downCount + (row.downCount || 0) }), { spend: 0, impact: 0, upCount: 0, downCount: 0 });
+      const weightedPct = totals.spend ? (totals.impact / totals.spend) * 100 : 0;
+      return (
+        <div className="rounded-3xl bg-white p-4 shadow-sm">
+          <div className="rounded-2xl bg-slate-900 px-4 py-3 text-white shadow-sm"><h2 className="text-base font-semibold">{title}</h2></div>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 overflow-x-auto">
+            <table className="min-w-full text-[13px]">
+              <thead className="bg-amber-50 text-slate-800">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">{kind === "region" ? "Miền" : "Nhóm hàng"}</th>
+                  <th className="px-3 py-2 text-right font-medium">Giá trị mua</th>
+                  <th className="px-3 py-2 text-right font-medium">Ảnh hưởng giá</th>
+                  <th className="px-3 py-2 text-right font-medium">% ảnh hưởng</th>
+                  <th className="px-3 py-2 text-right font-medium">Mã tăng</th>
+                  <th className="px-3 py-2 text-right font-medium">Mã giảm</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.label} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-medium whitespace-normal break-words">{row.label}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrencyCompact(row.spend)}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap ${row.impact > 0 ? "text-rose-700" : row.impact < 0 ? "text-emerald-700" : "text-slate-700"}`}>{formatCurrencyCompact(row.impact)}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap ${row.pct > 0 ? "text-rose-700" : row.pct < 0 ? "text-emerald-700" : "text-slate-700"}`}>{formatPct(row.pct)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap"><button type="button" onClick={() => onCountClick(kind, row.label, "up")} className="rounded-lg px-2 py-1 font-semibold text-rose-700 transition hover:bg-rose-50 hover:underline">{row.upCount}</button></td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap"><button type="button" onClick={() => onCountClick(kind, row.label, "down")} className="rounded-lg px-2 py-1 font-semibold text-emerald-700 transition hover:bg-emerald-50 hover:underline">{row.downCount}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 bg-amber-50 font-semibold text-slate-800">
+                  <td className="px-3 py-2">Tổng</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrencyCompact(totals.spend)}</td>
+                  <td className={`px-3 py-2 text-right whitespace-nowrap ${totals.impact > 0 ? "text-rose-700" : totals.impact < 0 ? "text-emerald-700" : "text-slate-700"}`}>{formatCurrencyCompact(totals.impact)}</td>
+                  <td className={`px-3 py-2 text-right whitespace-nowrap ${weightedPct > 0 ? "text-rose-700" : weightedPct < 0 ? "text-emerald-700" : "text-slate-700"}`}>{formatPct(weightedPct)}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap"><button type="button" onClick={() => onCountClick(kind, "__TOTAL__", "up")} className="rounded-lg px-2 py-1 font-semibold text-rose-700 transition hover:bg-rose-50 hover:underline">{totals.upCount}</button></td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap"><button type="button" onClick={() => onCountClick(kind, "__TOTAL__", "down")} className="rounded-lg px-2 py-1 font-semibold text-emerald-700 transition hover:bg-emerald-50 hover:underline">{totals.downCount}</button></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    function PieSummaryPanel({ rows }) {
+      const colors = ["#60a5fa", "#f97316", "#94a3b8", "#a78bfa", "#22c55e", "#f43f5e"];
+      const chartData = rows.map((item, idx) => ({ ...item, color: colors[idx % colors.length], weight: Math.max(Math.abs(item.pct), 0.01) }));
+      const totalWeight = chartData.reduce((sum, item) => sum + item.weight, 0) || 1;
+      let cumulative = 0;
+      const gradientStops = chartData.map((item) => {
+        const start = cumulative;
+        cumulative += (item.weight / totalWeight) * 100;
+        return `${item.color} ${start}% ${cumulative}%`;
+      }).join(", ");
+      return (
+        <div className="h-fit rounded-3xl bg-white p-3 shadow-sm">
+          <div className="rounded-2xl bg-slate-50 p-2">
+            <div className="flex min-h-[220px] flex-col items-center justify-start pt-2">
+              <div className="relative h-40 w-40 rounded-full border border-slate-200" style={{ background: `conic-gradient(${gradientStops})` }}>
+                <div className="absolute inset-7 rounded-full bg-white" />
+                <div className="absolute inset-0 flex items-center justify-center text-center">
+                  <div>
+                    <div className="text-[10px] text-slate-500">So sánh</div>
+                    <div className="text-[12px] font-semibold text-slate-700">% chênh lệch</div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 grid w-full grid-cols-2 gap-1.5 px-2">
+                {chartData.map((item) => (
+                  <div key={item.label} className="bg-white/90 px-1 py-0.5 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <span className="inline-block h-[9px] w-[9px] rounded-full" style={{ backgroundColor: item.color }} />
+                      <div className="text-[7px] font-semibold leading-tight text-slate-700">{item.label}</div>
+                    </div>
+                    <div className={`text-[8px] font-bold ${item.pct > 0 ? "text-rose-700" : item.pct < 0 ? "text-emerald-700" : "text-slate-600"}`}>{formatPct(item.pct)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ItemsTable({ title, rows }) {
+      return (
+        <div className="rounded-3xl bg-white p-4 shadow-sm">
+          <h2 className="text-base font-semibold">{title}</h2>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 overflow-x-auto">
+            <table className="min-w-full text-[13px]">
+              <thead className="bg-slate-100 text-slate-700">
+                <tr>
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap">Mã hàng</th>
+                  <th className="px-3 py-3 text-left font-semibold">Tên hàng</th>
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap">Miền</th>
+                  <th className="px-3 py-3 text-left font-semibold whitespace-nowrap">Khối</th>
+                  <th className="px-3 py-3 text-right font-semibold whitespace-normal leading-tight">Giá tháng trước</th>
+                  <th className="px-3 py-3 text-right font-semibold whitespace-normal leading-tight">Giá tháng báo cáo</th>
+                  <th className="px-3 py-3 text-right font-semibold whitespace-nowrap">Chênh lệch</th>
+                  <th className="px-3 py-3 text-right font-semibold whitespace-nowrap">% chênh</th>
+                  <th className="px-3 py-3 text-right font-semibold whitespace-nowrap">Ảnh hưởng</th>
+                  <th className="px-3 py-3 text-left font-semibold">Lý do biến động giá</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.block}-${row.sku}-${row.region}`} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">{row.sku}</td>
+                    <td className="px-3 py-2 whitespace-normal break-words font-medium text-slate-800">{row.name}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{row.region}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{row.block}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{formatNumber(row.prevPrice)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{formatNumber(row.currentPrice)}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap ${row.diff > 0 ? "text-rose-700" : "text-emerald-700"}`}>{formatNumber(row.diff)}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap ${row.pct > 0 ? "text-rose-700" : "text-emerald-700"}`}>{formatPct(row.pct)}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap ${row.impact > 0 ? "text-rose-700" : "text-emerald-700"}`}>{formatCurrencyCompact(row.impact)}</td>
+                    <td className="px-3 py-2 whitespace-normal break-words">{row.priceChangeReason || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    function DetailModal({ state, onClose }) {
+      if (!state.open) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[85vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">{state.title}</h3>
+                <div className="mt-1 text-sm text-slate-500">{state.rows.length} mã hàng</div>
+              </div>
+              <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Đóng</button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto p-4">
+              <ItemsTable title="Chi tiết" rows={state.rows} />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function PhelaPricingDashboardExport() {
+      const [selectedView, setSelectedView] = useState("Tất cả");
+      const [showOnlyChanges, setShowOnlyChanges] = useState(true);
+      const [selectedMonth, setSelectedMonth] = useState(SAMPLE_MONTH);
+      const [availableMonths, setAvailableMonths] = useState([SAMPLE_MONTH]);
+      const [uploadInfo, setUploadInfo] = useState(null);
+      const [detailModal, setDetailModal] = useState({ open: false, title: "", rows: [] });
+      const [hasUploadedRealData, setHasUploadedRealData] = useState(false);
+      const [rawRows, setRawRows] = useState(SAMPLE_ROWS);
+
+      const prevMonthLabel = shiftMonthLabel(selectedMonth, -1, 0);
+      const yoyMonthLabel = shiftMonthLabel(selectedMonth, 0, -1);
+
+      const currentMonthRows = useMemo(() => {
+        const filtered = rawRows.filter((row) => normalizeMonthLabel(row.reportMonth) === selectedMonth);
+        return filtered.length ? filtered : rawRows;
+      }, [rawRows, selectedMonth]);
+
+      const dashboard = useMemo(() => buildDashboardData(currentMonthRows), [currentMonthRows]);
+      const current = dashboard[selectedView];
+      const visibleRegionSummary = useMemo(() => (showOnlyChanges ? current.regionSummary.filter((r) => r.pct !== 0) : current.regionSummary), [current, showOnlyChanges]);
+      const visibleGroupSummary = useMemo(() => (showOnlyChanges ? current.groupSummary.filter((r) => r.pct !== 0) : current.groupSummary), [current, showOnlyChanges]);
+      const visibleChangedItems = useMemo(() => [...current.increaseItems, ...current.decreaseItems], [current]);
+
+      const openDetailModal = (tableKind, label, direction) => {
+        const source = direction === "up" ? current.increaseItems : current.decreaseItems;
+        const rows = label === "__TOTAL__" ? source : source.filter((row) => row[tableKind] === label);
+        setDetailModal({ open: true, title: `${direction === "up" ? "Chi tiết mã tăng giá" : "Chi tiết mã giảm giá"} - ${label === "__TOTAL__" ? "Tổng" : label}`, rows });
+      };
+
+      const handleExportCurrentMonth = () => {
+        const rowsToExport = currentMonthRows.filter((row) => (selectedView === "Tất cả" ? true : row.block === selectedView));
+        if (!rowsToExport.length) {
+          setUploadInfo({ ok: false, fileName: "Xuất file", message: "Không có dữ liệu để xuất theo tháng hoặc khối đang chọn." });
+          return;
+        }
+        const exportRows = rowsToExport.map((row) => ({
+          report_month: normalizeMonthLabel(row.reportMonth),
+          sku: row.sku,
+          item_name: row.name,
+          region: row.region,
+          group_name: row.group,
+          purchase_qty: row.purchaseQty,
+          uom: row.uom,
+          spend: row.spend,
+          current_price: row.currentPrice,
+          prev_price: row.prevPrice,
+          yoy_price: row.yoyPrice,
+          supplier_code: row.supplierCode,
+          supplier_name: row.supplierName,
+          price_change_reason: row.priceChangeReason,
+          note: row.note,
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(exportRows);
+        const workbook = XLSX.utils.book_new();
+        const sheetName = selectedView === "Tất cả" ? "All" : selectedView;
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+        const safeMonth = (normalizeMonthLabel(selectedMonth) || "export").replace("/", "-");
+        const fileName = `PHELA_data_${sheetName}_${safeMonth}.xlsx`;
+        const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([excelBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setUploadInfo({ ok: true, fileName, message: `Đã tạo file xuất gồm ${exportRows.length} dòng dữ liệu.` });
+      };
+
+      const handleUpload = (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        parseWorkbook(file, (workbook) => {
+          const parsedRows = buildRowsFromWorkbook(workbook);
+          if (!parsedRows.length) {
+            setUploadInfo({ ok: false, fileName: file.name, message: "Không tìm thấy dữ liệu phù hợp trong 2 sheet Food / NonFood." });
+            return;
+          }
+          const parsedMonths = Array.from(new Set(parsedRows.map((row) => normalizeMonthLabel(row.reportMonth)).filter(Boolean)));
+          setRawRows((prevRows) => {
+            let nextRows;
+            if (!hasUploadedRealData) nextRows = parsedRows;
+            else {
+              const monthsToReplace = new Set(parsedMonths);
+              const keptRows = prevRows.filter((row) => !monthsToReplace.has(normalizeMonthLabel(row.reportMonth)));
+              nextRows = [...keptRows, ...parsedRows];
+            }
+            const mergedMonths = Array.from(new Set(nextRows.map((row) => normalizeMonthLabel(row.reportMonth)).filter(Boolean))).sort((a, b) => {
+              const [am, ay] = a.split("/").map(Number);
+              const [bm, by] = b.split("/").map(Number);
+              return by * 12 + bm - (ay * 12 + am);
+            });
+            setAvailableMonths(mergedMonths);
+            if (parsedMonths.length) {
+              const latest = [...parsedMonths].sort((a, b) => {
+                const [am, ay] = a.split("/").map(Number);
+                const [bm, by] = b.split("/").map(Number);
+                return by * 12 + bm - (ay * 12 + am);
+              })[0];
+              setSelectedMonth(latest);
+            }
+            return nextRows;
+          });
+          setHasUploadedRealData(true);
+          setUploadInfo({ ok: true, fileName: file.name, message: hasUploadedRealData ? `Đã đọc ${parsedRows.length} dòng dữ liệu từ workbook và ghép vào dữ liệu hiện có.` : `Đã đọc ${parsedRows.length} dòng dữ liệu từ workbook và thay dữ liệu mẫu mặc định.` });
+        });
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-100 p-6 text-slate-900">
+          <div className="mx-auto max-w-[1600px] space-y-6">
+            <div className="rounded-3xl bg-stone-200 p-6 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div className="flex-1">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">PHÊ LA • Pricing Dashboard</div>
+                      <h1 className="mt-2 text-3xl font-semibold">Báo Cáo Giá</h1>
+                    </div>
+                    <div className="pt-1 text-right text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Procurement report</div>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-4 xl:w-[980px]">
+                  <div className="rounded-2xl border border-stone-400 bg-white/75 p-3">
+                    <div className="text-xs text-slate-500">Tháng báo cáo</div>
+                    <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold">
+                      {availableMonths.map((month) => <option key={month} value={month}>{month}</option>)}
+                    </select>
+                  </div>
+                  <div className="rounded-2xl border border-stone-400 bg-white/75 p-3">
+                    <div className="text-xs text-slate-500">So sánh tháng trước</div>
+                    <div className="mt-2 font-semibold">{prevMonthLabel || "-"}</div>
+                  </div>
+                  <div className="rounded-2xl border border-stone-400 bg-white/75 p-3">
+                    <div className="text-xs text-slate-500">So sánh cùng kỳ</div>
+                    <div className="mt-2 font-semibold">{yoyMonthLabel || "-"}</div>
+                  </div>
+                  <label className="cursor-pointer rounded-2xl border border-emerald-300 bg-emerald-50/90 px-3 py-2 shadow-sm xl:justify-self-end xl:w-[180px]">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-emerald-700">Data input</div>
+                    <div className="mt-1 text-sm font-semibold text-emerald-900">Kéo thả / chọn file</div>
+                    <div className="mt-1 text-xs text-emerald-700">.xlsx hoặc .xls</div>
+                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
+                  </label>
+                </div>
+              </div>
+              {uploadInfo && <div className={`mt-4 rounded-2xl p-3 text-sm ${uploadInfo.ok ? "bg-white/70 text-emerald-800" : "bg-rose-50 text-rose-700"}`}><div className="font-medium">{uploadInfo.fileName}</div><div className="mt-1">{uploadInfo.message}</div></div>}
+            </div>
+
+            <div className="rounded-3xl bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-sm font-medium text-slate-600">Xem báo cáo theo khối:</div>
+                    {REPORT_VIEWS.map((view) => <button key={view} onClick={() => setSelectedView(view)} className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${selectedView === view ? "bg-slate-900 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>{view}</button>)}
+                  </div>
+                  <div className="ml-auto flex items-center"><button type="button" onClick={handleExportCurrentMonth} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Xuất file .xlsx</button></div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
+                  <span className="text-sm font-medium text-slate-500">Hiển thị:</span>
+                  <button onClick={() => setShowOnlyChanges(true)} className={`rounded-2xl px-3 py-2 text-sm font-medium transition ${showOnlyChanges ? "bg-amber-600 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>Chỉ hiện biến động</button>
+                  <button onClick={() => setShowOnlyChanges(false)} className={`rounded-2xl px-3 py-2 text-sm font-medium transition ${!showOnlyChanges ? "bg-slate-900 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>Hiện tất cả</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {current.kpis.map((item) => <StatCard key={item.label} item={item} />)}
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-[minmax(0,2.05fr)_190px]">
+              <SummaryTable title={selectedView === "Tất cả" ? "Báo cáo chênh lệch giá với tháng trước theo miền" : `Báo cáo chênh lệch giá với tháng trước theo miền - ${selectedView}`} rows={visibleRegionSummary} kind="region" onCountClick={openDetailModal} />
+              <PieSummaryPanel rows={visibleRegionSummary} />
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-[minmax(0,2.05fr)_190px]">
+              <SummaryTable title={selectedView === "Tất cả" ? "Báo cáo chênh lệch giá với tháng trước theo nhóm hàng" : `Báo cáo chênh lệch giá với tháng trước theo nhóm hàng - ${selectedView}`} rows={visibleGroupSummary} kind="group" onCountClick={openDetailModal} />
+              <PieSummaryPanel rows={visibleGroupSummary} />
+            </div>
+
+            <div className="grid gap-6">
+              <ItemsTable title={`Danh sách mã hàng biến động giá${selectedView === "Tất cả" ? "" : ` - ${selectedView}`}`} rows={visibleChangedItems} />
+            </div>
+
+            <DetailModal state={detailModal} onClose={() => setDetailModal({ open: false, title: "", rows: [] })} />
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<PhelaPricingDashboardExport />);
+  </script>
+</body>
+</html>
