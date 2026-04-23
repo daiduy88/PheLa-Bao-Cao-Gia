@@ -14,8 +14,9 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useMemo, useState } = React;
-
+    const { useEffect, useMemo, useState } = React;
+const SUPABASE_URL = "https://icfmpdcupzzydxvvxaxy.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_yUitJkLOo5D4hPXy8O_6kQ_unB3P1FX";
     const SAMPLE_MONTH = "04/2026";
     const REPORT_VIEWS = ["Tất cả", "Food", "NonFood"];
 
@@ -182,34 +183,90 @@
       return Array.from(map.values()).map((item) => ({ ...item, pct: item.pctWeight ? item.pctAccumulator / item.pctWeight : 0 })).sort((a, b) => b.pct - a.pct);
     }
     function buildDashboardData(rows) {
-      const blocks = { "Tất cả": rows, Food: rows.filter((r) => r.block === "Food"), NonFood: rows.filter((r) => r.block === "NonFood") };
-      const out = {};
-      Object.entries(blocks).forEach(([view, blockRows]) => {
-        const spend = blockRows.reduce((sum, r) => sum + (r.spend || 0), 0);
-        const impactPrev = blockRows.reduce((sum, r) => (!r.prevPrice || !r.currentPrice ? sum : sum + ((r.currentPrice - r.prevPrice) * (r.spend || 0)) / (r.currentPrice || 1)), 0);
-        const impactYoy = blockRows.reduce((sum, r) => (!r.yoyPrice || !r.currentPrice ? sum : sum + ((r.currentPrice - r.yoyPrice) * (r.spend || 0)) / (r.currentPrice || 1)), 0);
-        const changes = blockRows.filter((r) => r.prevPrice && r.currentPrice && (r.spend || 0) > 0).map((r) => ({ ...r, diff: r.currentPrice - r.prevPrice, pct: ((r.currentPrice - r.prevPrice) / r.prevPrice) * 100, impact: ((r.currentPrice - r.prevPrice) * (r.spend || 0)) / (r.currentPrice || 1) }));
-        const increaseItems = changes.filter((r) => r.pct > 0).sort((a, b) => b.pct - a.pct);
-        const decreaseItems = changes.filter((r) => r.pct < 0).sort((a, b) => b.pct - a.pct);
-        const foodSpend = blocks.Food.reduce((sum, r) => sum + (r.spend || 0), 0);
-        const nonFoodSpend = blocks.NonFood.reduce((sum, r) => sum + (r.spend || 0), 0);
-        out[view] = {
-          kpis: [
-            { label: view === "Tất cả" ? "Tổng giá trị mua" : `Tổng giá trị mua ${view}`, value: formatCurrencyCompact(spend), note: view === "Tất cả" ? `Food: ${formatCurrencyCompact(foodSpend)} | NonFood: ${formatCurrencyCompact(nonFoodSpend)}` : `${formatNumber(blockRows.length)} dòng dữ liệu`, tone: "neutral" },
-            { label: "Ảnh hưởng giá vs tháng trước", value: impactPrev < 0 ? `${formatCurrencyCompact(impactPrev)} (giảm chi phí)` : impactPrev > 0 ? `${formatCurrencyCompact(impactPrev)} (tăng chi phí)` : formatCurrencyCompact(impactPrev), note: `Tương đương ${formatPct(spend ? (impactPrev / spend) * 100 : 0)}`, tone: impactPrev > 0 ? "increase" : impactPrev < 0 ? "decrease" : "neutral" },
-            { label: "Ảnh hưởng giá vs cùng kỳ", value: impactYoy < 0 ? `${formatCurrencyCompact(impactYoy)} (giảm chi phí)` : impactYoy > 0 ? `${formatCurrencyCompact(impactYoy)} (tăng chi phí)` : formatCurrencyCompact(impactYoy), note: `Tương đương ${formatPct(spend ? (impactYoy / spend) * 100 : 0)}`, tone: impactYoy > 0 ? "increase" : impactYoy < 0 ? "decrease" : "neutral" },
-            { label: "SKU biến động vs tháng trước", value: formatNumber(increaseItems.length + decreaseItems.length), note: `Tăng giá ${increaseItems.length} | Giảm giá ${decreaseItems.length}`, tone: "neutral" },
-          ],
-          regionSummary: aggregateRows(blockRows, "region"),
-          groupSummary: aggregateRows(blockRows, "group"),
-          increaseItems,
-          decreaseItems,
-        };
-      });
-      return out;
-    }
+  ...
+}
+async function fetchPricingRowsFromSupabase() {
+  const url =
+    `${SUPABASE_URL}/rest/v1/pricing_rows` +
+    `?select=report_month,block,region,group_name,sku,item_name,purchase_qty,uom,spend,current_price,prev_price,yoy_price,supplier_code,supplier_name,price_change_reason,note` +
+    `&order=report_month.desc&order=block.asc&order=region.asc&order=sku.asc`;
 
-    function StatCard({ item }) {
+  const response = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Không đọc được dữ liệu từ Supabase");
+  }
+
+  const data = await response.json();
+
+  return data.map((row) => ({
+    reportMonth: normalizeMonthLabel(row.report_month),
+    block: row.block || "",
+    region: row.region || "Không xác định",
+    group: row.group_name || "Khác",
+    sku: row.sku || "",
+    name: row.item_name || "",
+    purchaseQty: Number(row.purchase_qty || 0),
+    uom: row.uom || "",
+    spend: Number(row.spend || 0),
+    currentPrice: Number(row.current_price || 0),
+    prevPrice: Number(row.prev_price || 0),
+    yoyPrice: Number(row.yoy_price || 0),
+    supplierCode: row.supplier_code || "",
+    supplierName: row.supplier_name || "",
+    priceChangeReason: row.price_change_reason || "",
+    note: row.note || "",
+  }));
+}
+async function fetchPricingRowsFromSupabase() {
+  const url =
+    `${SUPABASE_URL}/rest/v1/pricing_rows` +
+    `?select=report_month,block,region,group_name,sku,item_name,purchase_qty,uom,spend,current_price,prev_price,yoy_price,supplier_code,supplier_name,price_change_reason,note` +
+    `&order=report_month.desc&order=block.asc&order=region.asc&order=sku.asc`;
+
+  const response = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Không đọc được dữ liệu từ Supabase");
+  }
+
+  const data = await response.json();
+
+  return data.map((row) => ({
+    reportMonth: normalizeMonthLabel(row.report_month),
+    block: row.block || "",
+    region: row.region || "Không xác định",
+    group: row.group_name || "Khác",
+    sku: row.sku || "",
+    name: row.item_name || "",
+    purchaseQty: Number(row.purchase_qty || 0),
+    uom: row.uom || "",
+    spend: Number(row.spend || 0),
+    currentPrice: Number(row.current_price || 0),
+    prevPrice: Number(row.prev_price || 0),
+    yoyPrice: Number(row.yoy_price || 0),
+    supplierCode: row.supplier_code || "",
+    supplierName: row.supplier_name || "",
+    priceChangeReason: row.price_change_reason || "",
+    note: row.note || "",
+  }));
+}
+
+function StatCard({ item }) {
+  ...
+}
       const toneClass = item.tone === "increase" ? "border-rose-200 bg-rose-50" : item.tone === "decrease" ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white";
       const valueClass = item.tone === "increase" ? "text-rose-700" : item.tone === "decrease" ? "text-emerald-700" : "text-slate-900";
       const noteClass = item.tone === "increase" ? "text-rose-700" : item.tone === "decrease" ? "text-emerald-700" : "text-slate-600";
@@ -373,7 +430,48 @@
       const [detailModal, setDetailModal] = useState({ open: false, title: "", rows: [] });
       const [hasUploadedRealData, setHasUploadedRealData] = useState(false);
       const [rawRows, setRawRows] = useState(SAMPLE_ROWS);
+useEffect(() => {
+  let isMounted = true;
 
+  fetchPricingRowsFromSupabase()
+    .then((rows) => {
+      if (!isMounted || !rows.length) return;
+
+      setRawRows(rows);
+
+      const months = Array.from(
+        new Set(rows.map((row) => normalizeMonthLabel(row.reportMonth)).filter(Boolean))
+      ).sort((a, b) => {
+        const [am, ay] = a.split("/").map(Number);
+        const [bm, by] = b.split("/").map(Number);
+        return by * 12 + bm - (ay * 12 + am);
+      });
+
+      if (months.length) {
+        setAvailableMonths(months);
+        setSelectedMonth(months[0]);
+      }
+
+      setHasUploadedRealData(true);
+      setUploadInfo({
+        ok: true,
+        fileName: "Supabase",
+        message: `Đã tải ${rows.length} dòng dữ liệu online từ Supabase.`,
+      });
+    })
+    .catch((error) => {
+      if (!isMounted) return;
+      setUploadInfo({
+        ok: false,
+        fileName: "Supabase",
+        message: `Lỗi tải dữ liệu online: ${error.message}`,
+      });
+    });
+
+  return () => {
+    isMounted = false;
+  };
+}, []);
       const prevMonthLabel = shiftMonthLabel(selectedMonth, -1, 0);
       const yoyMonthLabel = shiftMonthLabel(selectedMonth, 0, -1);
 
